@@ -1,0 +1,349 @@
+---
+title: "Test"
+author: "jaya"
+date: "2022-11-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#install.packages("tidyverse")
+#install.packages("caret")
+#install.packages("imputeTS")
+#install.packages("ggplot2")
+#install.packages("corrplot")
+#install.packages("e1071")
+#install.packages("arules")
+#install.packages("arulesViz")
+#install.packages("neuralnet")
+#install.packages("rpart")
+#install.packages("rpart.plot")
+library("tidyverse")
+library("caret")
+library("imputeTS")
+library("ggplot2")
+library("corrplot")
+library("e1071")
+library("arules")
+library("arulesViz")
+library("neuralnet")
+library("fastDummies")
+library("rpart")
+library("rpart.plot")
+```
+
+import HMO data
+```{r}
+data<- read_csv('https://intro-datascience.s3.us-east-2.amazonaws.com/HMO_data.csv')
+```
+explore the structure of dataset
+```{r}
+str(data)
+```
+Data Preprocessing 
+Convert categorical variable into factor data type
+```{r}
+data$smoker <- as.factor(data$smoker)
+data$location <- as.factor(data$location)
+data$location_type <- as.factor(data$location_type)
+data$education_level <- as.factor(data$education_level)
+data$yearly_physical <- as.factor(data$yearly_physical)
+data$exercise <- as.factor(data$exercise)
+data$married <- as.factor(data$married)
+data$hypertension <- as.factor(data$hypertension)
+data$gender <- as.factor(data$gender)
+```
+
+check missing value
+```{r}
+#sum(is.na(data))
+sum(is.na(data$bmi))
+sum(is.na(data$children))
+sum(is.na(is.numeric(data$smoker)))
+sum(is.na(is.numeric(data$yearly_physical)))
+sum(is.na(is.numeric(data$exercise)))
+sum(is.na(is.numeric(data$married)))
+sum(is.na(data$hypertension))
+sum(is.na(is.numeric(data$gender)))
+#After Null check on variables we found that BMI and 
+#hypertension has Null values in it.
+```
+Empute the missing value
+```{r}
+data$bmi<- na_interpolation(data$bmi)
+data[is.na(data$hypertension),which(colnames(data) == "hypertension")] <- "0"
+table(data$hypertension)
+#checking if the bmi and hypertension are interpolated:
+sum(is.na(data$bmi))
+sum(is.na(data$hypertension))
+```
+Add new variable expensive using top 20 % as cap
+```{r}
+#check the number in 80% quantile
+quantile(data$cost,probs = 0.8)
+```
+
+```{r}
+data$expensive <- ifelse(data$cost >= quantile (data$cost,0.8),1,0)
+prop.table(table(data$expensive))
+#convert variables to factor
+data$expensive <- as.factor(data$expensive)
+```
+descriptive summary and data visualization
+
+```{r}
+#make basic descriptive summary
+summary(data)
+```
+Outlier Detection
+```{r}
+#detect outliers for cost 
+ggplot(data = data, aes(x=cost)) + 
+  geom_boxplot(outlier.colour="red", outlier.shape=8,
+                outlier.size=4) + coord_flip() + ggtitle("Outlier detection of cost")
+```
+```{r}
+#detect outliers for age
+ggplot(data = data, aes(x=age)) + 
+  geom_boxplot(outlier.colour="red", outlier.shape=8,
+                outlier.size=4) + coord_flip() + ggtitle("Outlier detection of age")
+```
+```{r}
+#detect outliers for children
+ggplot(data = data, aes(x=children)) + 
+  geom_boxplot(outlier.colour="red", outlier.shape=8,
+                outlier.size=4) + coord_flip() + ggtitle("Outlier detection of children")
+```
+
+```{r}
+#detect outliers for bmi
+ggplot(data = data, aes(x=bmi)) + 
+  geom_boxplot(outlier.colour="red", outlier.shape=8,
+                outlier.size=4) + coord_flip() + ggtitle("Outlier detection of bmi")
+```
+Use Histogram for data distribution
+
+```{r}
+# Histogram of cost with density plot
+ggplot(data, aes(x=cost)) + 
+ geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") + ggtitle("distribution of cost")
+```
+
+```{r}
+#distribution of cost with smoker
+ggplot(data, aes(x=cost, color=smoker)) +
+  geom_histogram(fill="white", alpha=0.5, position="identity") + ggtitle("distribution of cost with smoker")
+```
+
+```{r}
+#distribution of bmi with expensiveness
+ggplot(data, aes(x=bmi, color=expensive)) +
+  geom_histogram(fill="white", alpha=0.5, position="identity") + ggtitle("distribution of bmi with expenssive&non-expensive clients")
+```
+
+```{r}
+#distribution of age with expensiveness
+ggplot(data, aes(x=age, color=expensive)) +
+  geom_histogram(fill="white", alpha=0.5, position="identity") + ggtitle("distribution of age with expenssive&non-expensive clients")
+```
+Using scatterpoint for relationship between numerical variable
+```{r}
+#visualize relationship between age and bmi, using expensive as color
+ggplot(data = data) + geom_point(aes(
+  x = age, y = bmi, color = expensive)) + ggtitle("age and bmi")
+```
+
+```{r}
+#visualize relationship between cost and bmi, using smoker as color
+ggplot(data = data) + geom_point(aes(
+  x = cost, y = bmi, color = smoker)) + ggtitle("cost and bmi")
+```
+
+```{r}
+#visualize relationship between cost and age, using exercise as color
+ggplot(data = data) + geom_point(aes(
+  x = cost, y = age, color = exercise)) + ggtitle("cost and age")
+```
+
+```{r}
+#visualize relationship between cost and age, using yearly_physical as color
+ggplot(data = data) + geom_point(aes(
+  x = cost, y = age, color = yearly_physical)) + ggtitle("cost and age")
+```
+
+
+build colored correlation matrix with numerical variable
+```{r}
+library(corrplot)
+M <- cor(data[,c(2,3,4,14)])
+head(round(M,2))
+corrplot(M, method="color")
+```
+
+
+Data partition with training and testing. 70% goes to training and 30% goes to testing
+```{r}
+#set seed with sampling
+set.seed(5)
+train_index <- sample(1:nrow(data), 0.7*nrow(data), replace = FALSE)
+#build training and testing dataset
+train <- data[train_index,-c(1,14)]
+test <- data[-train_index,-c(1,14)]
+```
+
+#linear Regression
+```{r}
+trainlinear <- data[train_index,-c(1,15)]
+testlinear <- data[-train_index,-c(1,15)]
+linearmodel <- lm(formula = cost~.,data = trainlinear)
+summary(linearmodel)
+linearpredict <- predict(linearmodel,newdata =testlinear)
+cor.test(linearpredict, testlinear$cost, method = c("pearson", "kendall", "spearman"))
+```
+```{r}
+# Used different combination of variables in linear model to avoid overfitting issue
+linearmodel1<-lm(formula=cost~smoker+age+bmi+children+hypertension+exercise,data=trainlinear)
+summary(linearmodel1)
+linearpredict1 <- predict(linearmodel1,newdata =testlinear)
+cor.test(linearpredict1, testlinear$cost, method = c("pearson", "kendall", "spearman"))
+```
+
+
+#logit regresison 
+```{r}
+logitmodel <- glm(expensive~., data = train, family = "binomial")
+summary(logitmodel)
+predict_reg <- predict(logitmodel, newdata = test[,-13], type = "response")
+predict_reg <- round(predict_reg)
+predict_reg <- as.factor(predict_reg)
+length(predict_reg)
+library(caret)
+confusionMatrix(predict_reg,test$expensive)
+```
+```{r}
+# Used different combination of variables in linear model to avoid overfitting issue
+logitmodel1 <- glm(expensive~smoker+age+bmi+children+hypertension+exercise+location+location_type+education_level, data = train, family = "binomial")
+predict_reg1 <- predict(logitmodel1, newdata = test[,-13], type = "response")
+predict_reg1 <- round(predict_reg1)
+predict_reg1 <- as.factor(predict_reg1)
+length(predict_reg1)
+library(caret)
+confusionMatrix(predict_reg1,test$expensive)
+```
+
+
+build support vector machine model
+```{r}
+library(e1071)
+library(caret)
+svmmodel <- svm(expensive~.,data = train)
+summary(svmmodel)
+svmpredict <- predict(svmmodel, newdata = test[,-13], type = "response" )
+confusionMatrix(svmpredict,test$expensive)
+
+#SVM for age,bmi,smoker and exercise as Indpt
+print("SVM For age, BMI , Children, Smoker, Yearly Physical, Excercise,Hypertension,Married")
+svmmodel2<- svm(expensive~age+bmi+children+smoker+yearly_physical+exercise+hypertension+married,data = train)
+svmpredict2 <- predict(svmmodel2, newdata = test[,-13], type = "response" )
+confusionMatrix(svmpredict2,test$expensive)
+
+
+print("SVM without married variable")
+svmmodel5<- svm(expensive~age+bmi+children+smoker+exercise+hypertension+yearly_physical,data = train)
+svmpredict5 <- predict(svmmodel5, newdata = test[,-13], type = "response" )
+confusionMatrix(svmpredict5,test$expensive)
+```
+
+Association Rules Analysis
+```{r}
+#Build Assciation Rule
+assodata <- data[,-14]
+#convert all the variables into factors
+assodata[,1:14] <- lapply(assodata[,1:14],factor)
+str(assodata)
+```
+
+```{r}
+#convert the sample dataset into transaction 
+library(arules)
+assodata <- as(assodata,"transactions")
+```
+
+```{r}
+#do association mining on sample data
+datarules <- apriori(assodata,
+ parameter=list(supp=0.05, conf=0.7),
+ control=list(verbose=F),
+ appearance=list(default="lhs",rhs=("expensive=1")))
+#inspect rules
+library(arulesViz)
+inspect(datarules)
+inspectDT(datarules)
+```
+
+neural network
+```{r}
+library(neuralnet)
+library(fastDummies)
+data_neural <- dummy_cols(data[,-c(6,7,8,9,11,13,14)])
+colnames(data_neural)
+
+data_neural <- data_neural[,-match(c("X","smoker", "exercise","hypertension","expensive",
+                                     "smoker_no", "exercise_Not-Active","hypertension_0", "expensive_0" ),colnames(data_neural))]
+#separate neural data into training and data 
+neural_train <- data_neural[train_index,]
+neural_test <- data_neural[-train_index,]
+#put training data into neural network model
+datanet1 <- neuralnet(expensive_1~., neural_train, 
+                       hidden=3, lifesign="minimal", linear.output=TRUE, threshold=0.01, stepmax=1e+08)
+
+net1_predict <- compute(datanet1, neural_test[,-7])
+net_result1 <- as.factor(round(net1_predict$net.result))
+neural_test$expensive_1 <- as.factor(neural_test$expensive_1)
+confusionMatrix(net_result1, neural_test$expensive_1)
+```
+
+Decision Tree
+```{r}
+#install.packages("caret")
+library(e1071)
+library(caret)
+library(rpart)
+library(rpart.plot)
+trctrl<- trainControl(method="repeatedcv",number=50)
+tree_df <- rpart(expensive ~.,data = train, method='class')
+rpart.plot(tree_df)
+```
+
+```{r}
+library(caret)
+predTree<-predict(tree_df,test)
+predTree<- round(predTree)
+predTree<-predTree[,2]
+predTree<- as.factor(predTree)
+confusionMatrix(predTree,test$expensive)
+```
+
+Random Forest
+```{r}
+#install.packages("randomForest")
+library(randomForest)
+library(datasets)
+library(caret)
+rf <- randomForest(expensive~., data=train, proximity=TRUE)
+
+print(rf)
+```
+```{r}
+p1 <- predict(rf, test)
+confusionMatrix(p1, test$ expensive)
+```
+```{r}
+plot(rf)
+varImpPlot(rf)
+```
+
